@@ -25,11 +25,10 @@ mkvirtualenv liverfunction --python=python3.6
 Install jupyter kernel
 ```
 # install kernel for ipython
-(limax) python -m ipykernel install --user --name=liverfunction
+(liverfunction) python -m ipykernel install --user --name=liverfunction
 
 # start jupyter lab
-(limax) jupyter serverextension enable --py jupyterlab --sys-prefix
-(limax) jupyter lab
+(liverfunction) jupyter lab
 ```
 
 ### Testing

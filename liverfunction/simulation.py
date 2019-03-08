@@ -1,45 +1,23 @@
-
-import os
-import roadrunner
-from roadrunner import SelectionRecord
-from collections import namedtuple
+"""
+Simulation helpers.
+E.g. Dosing functions.
+"""
+import logging
 import numpy as np
 import pandas as pd
-import matplotlib
-from matplotlib import pyplot as plt
-from IPython.display import display
-from os.path import join as pjoin
+from collections import namedtuple
 
-# global settings for plots
-plt.rcParams.update({
-        'axes.labelsize': 'large',
-        'axes.labelweight': 'bold',
-        'axes.titlesize': 'medium',
-        'axes.titleweight': 'bold',
-        'legend.fontsize': 'small',
-        'xtick.labelsize': 'large',
-        'ytick.labelsize': 'large',
-        'figure.facecolor': '1.00'
-    })
+# import libsbml
+import roadrunner
+from roadrunner import SelectionRecord
 
 
-# consistent plotting styles
-colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-kwargs_data_plot = {'marker': 's', 'linestyle': '--', 'linewidth': 1}
-kwargs_data = {'marker': 's', 'linestyle': '--', 'linewidth': 1, 'capsize': 3}
-kwargs_sim = {'marker': None, 'linestyle': '-', 'linewidth': 2}
-
-# -------------------------------------------------
-# Overwrite for model
-# -------------------------------------------------
-substances = []
-color_codes = {}
-# -------------------------------------------------
-
-def get_doses_keys():
-    return ['PODOSE_{}'.format(key) for key in substances] + ['IVDOSE_{}'.format(key) for key in substances]
-
+# -----------------------------------------------------------------------------
+# Dosing
+# -----------------------------------------------------------------------------
 class Dosing(object):
+    """ Description of dosing for simulation."""
+
     def __init__(self, substance, route, dose, unit):
         self.substance = substance
         self.route = route
@@ -50,48 +28,117 @@ class Dosing(object):
         return "{} [{}] {}".format(self.dose, self.unit, self.route)
 
 
-def get_color(key, codes=None, default="grey"):
-    """ Get color for given substance key"""
-    if codes is None:
-        codes = color_codes
-    return codes.get(key, default)
-
-
-def load_data(fid, sep="\t", show=True, data_dir=".", extension="csv"):
-    """ Loads data from given figure/table id.
-    Displays the first rows of the dataframe by default.
-    """
-    if fid.endswith(".csv") or fid.endswith(".tsv"):
-        pass
+def set_dosing(r, dosing, bodyweight=None, show=False):
+    """ Sets dosing for simulation. """
+    if dosing.route == "oral":
+        pid = "PODOSE_{}".format(dosing.substance)
+    elif dosing.route == "iv":
+        pid = "IVDOSE_{}".format(dosing.substance)
     else:
-        fid = '{}.{}'.format(fid, extension)
-    df = pd.read_csv(os.path.join(data_dir, fid), sep=sep, comment="#")
-    if show is True:
-        display(df.head())
-        print(fid)
-    return df
+        raise ValueError("Invalid dosing route: {}".format(dosing.route))
+
+    # get dose in [mg]
+    dose = dosing.dose
+    if dosing.unit.endswith("kg"):
+        if bodyweight is None:
+            bodyweight = r.BW
+        dose = dose * bodyweight
+
+    # reset the model
+    r.reset()
+    reset_doses(r)
+    r.setValue('init({})'.format(pid), dose)  # set dose in [mg]
+    r.reset(SelectionRecord.GLOBAL_PARAMETER)
+    r.reset()
+    # r.resetAll()?
+    if show:
+        print_doses(r)
 
 
-def load_model(model_path, info=True):
-    """ Loads the latest model version. """
+def get_doses_keys(r: roadrunner.ExecutableModel):
+    """Get all the parameter ids for dosing information."""
+    pids = r.model.getGlobalParameterIds()
+    keys = []
+    for pid in pids:
+        if pid.startswith("PODOSE_") or pid.startswith("IVDOSE_"):
+            keys.append(pid)
+    return pids
 
-    if info:
-        print('Model:', model_path)
 
+def reset_doses(r):
+    """ Sets all doses to zero. """
+    for key in get_doses_keys(r):
+        r.setValue('init({})'.format(key), 0)  # [mg]
+    r.reset(SelectionRecord.GLOBAL_PARAMETER)
+    r.reset()
+
+
+def print_doses(r, name=None):
+    """ Prints the complete dose information of the model. """
+    if name:
+        print('***', name, '***')
+    for key in get_doses_keys():
+        print('{}\t{}'.format(key, r.getValue(key)))
+
+
+# -----------------------------------------------------------------------------
+# Model loading
+# -----------------------------------------------------------------------------
+def set_selections(r: roadrunner.ExecutableModel, time=True,
+                   floatingSpecies=True,
+                   boundarySpecies=True,
+                   parameters=True,
+                   compartments=True,
+                   reactions=True):
+    """Sets model timecourse selections.
+    Selections are the variables stored in the simulation results.
+
+    :param r:
+    :param time:
+    :param floatingSpecies:
+    :param boundarySpecies:
+    :param parameterIds:
+    :param compartments:
+    :param reactions:
+    :return:
+    """
+    selections = []
+    if time:
+        selections += ["time"]
+    if floatingSpecies:
+        selections += r.model.getFloatingSpeciesIds()
+    if boundarySpecies:
+        selections += r.model.getBoundarySpeciesIds()
+    if parameters:
+        selections += r.model.getGlobalParameterIds()
+    if compartments:
+        selections += r.model.getCompartmentIds()
+    if reactions:
+        selections += r.model.getReactionIds()
+
+    r.timeCourseSelections = selections
+
+
+def load_model(model_path):
+    """ Loads model and sets selections.
+
+    :param model_path:
+    :return:
+    """
+    logging.info('Model:', model_path)
     r = roadrunner.RoadRunner(model_path)
     set_selections(r)
     return r
 
 
-def set_selections(r):
-    """ Sets the full model selections. """
-    r.timeCourseSelections = ["time"] + r.model.getFloatingSpeciesIds() + r.model.getGlobalParameterIds()
-
-
+# -----------------------------------------------------------------------------
+# Simulation
+# -----------------------------------------------------------------------------
 Result = namedtuple("Result", ['base', 'mean', 'std', 'min', 'max'])
 
 
-def simulate(r, tend, steps, dosing, changes={}, parameters=None, sensitivity=0.1, selections=None, yfun=None):
+def simulate(r, tend, steps, dosing, changes={}, parameters=None,
+             sensitivity=0.1, selections=None, yfun=None):
     """ Performs model simulation simulation with option on fallback.
 
     Does not support changes to the model yet.
@@ -172,34 +219,7 @@ def simulate(r, tend, steps, dosing, changes={}, parameters=None, sensitivity=0.
         s_min = pd.DataFrame(np.min(s_data, axis=2), columns=s_base.columns)
         s_max = pd.DataFrame(np.max(s_data, axis=2), columns=s_base.columns)
 
-        # return {'base': s_base, 'mean': s_mean, 'std': s_std, 'min': s_min, 'max': s_max}
         return Result(base=s_base, mean=s_mean, std=s_std, min=s_min, max=s_max)
-
-
-def add_line(xid, yid, ax, s, color='black', label='', xf=1.0, kwargs_sim=kwargs_sim, **kwargs):
-    """
-
-    :param xid:
-    :param yid:
-    :param ax:
-    :param s: namedtuple Result from simulate
-    :param color:
-    :return:
-    """
-    kwargs_plot = dict(kwargs_sim)
-    kwargs_plot.update(kwargs)
-
-    if isinstance(s, Result):
-        x = s.mean[xid]*xf
-
-        ax.fill_between(x, s.min[yid], s.mean[yid] - s.std[yid], color=color, alpha=0.3, label="__nolabel__")
-        ax.fill_between(x, s.mean[yid] + s.std[yid], s.max[yid], color=color, alpha=0.3, label="__nolabel__")
-        ax.fill_between(x, s.mean[yid] - s.std[yid], s.mean[yid] + s.std[yid], color=color, alpha=0.5, label="__nolabel__")
-
-        ax.plot(x, s.mean[yid], '-', color=color, label="sim {}".format(label), **kwargs_plot)
-    else:
-        x = s[xid] * xf
-        ax.plot(x, s[yid], '-', color=color, label="sim {}".format(label), **kwargs_plot)
 
 
 def resetAll(r):
@@ -213,48 +233,6 @@ def resetAll(r):
             roadrunner.SelectionRecord.FLOATING |
             roadrunner.SelectionRecord.GLOBAL_PARAMETER)
 
-
-def set_dosing(r, dosing, bodyweight=None, show=False):
-    """ Sets dosing for simulation. """
-    if dosing.route == "oral":
-        pid = "PODOSE_{}".format(dosing.substance)
-    elif dosing.route == "iv":
-        pid = "IVDOSE_{}".format(dosing.substance)
-    else:
-        raise ValueError("Invalid dosing route: {}".format(dosing.route))
-
-    # get dose in [mg]
-    dose = dosing.dose
-    if dosing.unit.endswith("kg"):
-        if bodyweight is None:
-            bodyweight = r.BW
-        dose = dose * bodyweight
-
-    # reset the model
-    r.reset()
-    reset_doses(r)
-    r.setValue('init({})'.format(pid), dose)  # set dose in [mg]
-    r.reset(SelectionRecord.GLOBAL_PARAMETER)
-    r.reset()
-    # r.resetAll()?
-    if show:
-        print_doses(r)
-
-
-def reset_doses(r):
-    """ Sets all doses to zero. """
-    for key in get_doses_keys():
-        r.setValue('init({})'.format(key), 0)  # [mg]
-    r.reset(SelectionRecord.GLOBAL_PARAMETER)
-    r.reset()
-
-
-def print_doses(r, name=None):
-    """ Prints the complete dose information of the model. """
-    if name:
-        print('***', name, '***')
-    for key in get_doses_keys():
-        print('{}\t{}'.format(key, r.getValue(key)))
 
 
 def parameters_for_sensitivity(r, model_path):
@@ -300,4 +278,3 @@ def parameters_for_sensitivity(r, model_path):
         parameters[pid] = value
 
     return parameters
-
