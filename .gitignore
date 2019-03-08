@@ -1,0 +1,14 @@
+dist
+build
+.idea
+liverfunction.egg-info/
+cover/
+.tox/
+.cache/
+.coverage
+.benchmark
+*.pyc
+*~
+coverage.xml
+wheels
+.ipynb_checkpoints/
