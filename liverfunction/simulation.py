@@ -62,7 +62,7 @@ def get_doses_keys(r: roadrunner.ExecutableModel):
     for pid in pids:
         if pid.startswith("PODOSE_") or pid.startswith("IVDOSE_"):
             keys.append(pid)
-    return pids
+    return keys
 
 
 def reset_doses(r):
