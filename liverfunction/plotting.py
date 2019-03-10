@@ -1,13 +1,7 @@
-import os
-import roadrunner
-from roadrunner import SelectionRecord
-from collections import namedtuple
-import numpy as np
-import pandas as pd
 import matplotlib
 from matplotlib import pyplot as plt
 
-from os.path import join as pjoin
+from .simulation import Result
 
 # global settings for plots
 plt.rcParams.update({
@@ -27,13 +21,6 @@ colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 kwargs_data_plot = {'marker': 's', 'linestyle': '--', 'linewidth': 1}
 kwargs_data = {'marker': 's', 'linestyle': '--', 'linewidth': 1, 'capsize': 3}
 kwargs_sim = {'marker': None, 'linestyle': '-', 'linewidth': 2}
-
-
-def get_color(key, codes=None, default="grey"):
-    """ Get color for given substance key"""
-    if codes is None:
-        codes = color_codes
-    return codes.get(key, default)
 
 
 def add_line(xid, yid, ax, s, color='black', label='', xf=1.0, kwargs_sim=kwargs_sim, **kwargs):

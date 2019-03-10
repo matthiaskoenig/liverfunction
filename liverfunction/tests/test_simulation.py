@@ -7,6 +7,10 @@ def test_load_model():
     r = lfsim.load_model(model_path=data.APAP_SBML)
     assert r is not None
 
+    selections = r.timeCourseSelections
+    assert "PODOSE_apap" in selections
+
+
 
 def test_get_doses_keys():
     r = lfsim.load_model(model_path=data.APAP_SBML)

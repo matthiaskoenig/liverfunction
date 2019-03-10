@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from collections import namedtuple
 
-# import libsbml
+import libsbml
 import roadrunner
 from roadrunner import SelectionRecord
 
@@ -84,6 +84,20 @@ def print_doses(r, name=None):
 # -----------------------------------------------------------------------------
 # Model loading
 # -----------------------------------------------------------------------------
+def load_model(model_path, timeCourseSelections=True):
+    """ Loads model and sets selections.
+
+    :param model_path:
+    :param set_selections boolean flag if timeCourseSelections are set on model.
+    :return:
+    """
+    logging.info('Model:', model_path)
+    r = roadrunner.RoadRunner(model_path)
+    if timeCourseSelections:
+        set_selections(r)
+    return r
+
+
 def set_selections(r: roadrunner.ExecutableModel, time=True,
                    floatingSpecies=True,
                    boundarySpecies=True,
@@ -97,7 +111,7 @@ def set_selections(r: roadrunner.ExecutableModel, time=True,
     :param time:
     :param floatingSpecies:
     :param boundarySpecies:
-    :param parameterIds:
+    :param parameters:
     :param compartments:
     :param reactions:
     :return:
@@ -117,19 +131,6 @@ def set_selections(r: roadrunner.ExecutableModel, time=True,
         selections += r.model.getReactionIds()
 
     r.timeCourseSelections = selections
-
-
-def load_model(model_path):
-    """ Loads model and sets selections.
-
-    :param model_path:
-    :return:
-    """
-    logging.info('Model:', model_path)
-    r = roadrunner.RoadRunner(model_path)
-    set_selections(r)
-    return r
-
 
 # -----------------------------------------------------------------------------
 # Simulation
@@ -234,22 +235,20 @@ def resetAll(r):
             roadrunner.SelectionRecord.GLOBAL_PARAMETER)
 
 
-
 def parameters_for_sensitivity(r, model_path):
-    """ Get the parameter ids for the sensitivity analysis.
+    """Get the parameter ids for the sensitivity analysis.
 
     This includes all constant parameters (not changed via assignments),
     excluding
     - parameters with value=0 (no effect on model, dummy parameter)
     - parameters which are physical constants, e.g., molecular weights
-    """
-    try:
-        import tesbml as libsbml
-    except ImportError:
-        import libsbml
 
-    doc = libsbml.readSBMLFromFile(model_path)
-    model = doc.getModel()
+    :param r:
+    :param model_path:
+    :return:
+    """
+    doc = libsbml.readSBMLFromFile(model_path)  # type: libsbml.SBMLDocument
+    model = doc.getModel()  # type: libsbml.Model
 
     # constant parameters in model
     pids_const = []
